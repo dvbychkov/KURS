@@ -15,7 +15,7 @@ Terraform
 
 Все конфигурационные файлы terraform по ссылке.
 
-ССЫЛКА
+[Terraform](https://github.com/dvbychkov/KURS/tree/master/terraform)
 
 В облаке разворачиваются виртуальные машины:
 
@@ -30,14 +30,12 @@ Ansible
 
 Устанавливаем ansible, создаём файлы ansible.cfg, inventory.ini, пишем сценарий.
 
-ССЫЛКА
+[Ansible](https://github.com/dvbychkov/KURS/tree/master/ansible)
 
 
 Сайт
 
 Запускаем первый файл конфигурации: nginx-playbook.yml, который развернет на хостах web1 и web2 веб-сервер nginx с сайтом.
-
-ССЫЛКА
 
 Адрес балансировщика
 
@@ -55,8 +53,6 @@ http://158.160.164.141
 
 
 Мониторинг
-
-ССЫЛКА
 
 http://84.201.158.1:3000
 
@@ -76,7 +72,6 @@ http://84.201.158.1:3000
 На хосте kibana - kibana
 На хостах web1 и web2 включает модуль nginx и настраивает filebeat
 
-ССЫЛКА
 
 http://51.250.64.52:5601
 
