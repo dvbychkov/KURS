@@ -1,0 +1,234 @@
+---
+- name: WEB and ELK
+  hosts: webservers,elastic_hosts,kibana_hosts
+  become: true
+  tasks:
+    - name: Add source repository into sources list
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://mirror.yandex.ru/mirrors/elastic/8/dists/stable/ stable main"
+        state: present
+- name: Update
+  hosts: all
+  become: true
+  tasks:
+    - name: Run the equivalent of "apt-get update" as a separate step
+      ansible.builtin.apt:
+        update_cache: true
+- name: WEB servers
+  hosts: webservers
+  become: true
+  tasks:
+    - name: Install a list of packages
+      ansible.builtin.apt:
+        pkg:
+        - nginx
+        - filebeat
+
+###
+- name: Add Elastic repository
+  hosts: webservers,elastic_hosts,kibana_hosts
+  become: true
+  tasks:
+    - name: Install prerequisite packages
+      ansible.builtin.apt:
+        name: ca-certificates
+        state: present
+
+    - name: Download Elasticsearch GPG key
+      ansible.builtin.get_url:
+        url: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+        dest: /tmp/GPG-KEY-elasticsearch
+        mode: "0644"
+
+    - name: Add Elasticsearch GPG key to keyring
+      ansible.builtin.apt_key:
+        file: /tmp/GPG-KEY-elasticsearch
+        keyring: /usr/share/keyrings/elasticsearch-keyring.gpg
+        state: present
+
+    - name: Add source repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/elasticsearch-keyring.gpg] https://mirror.yandex.ru/mirrors/elastic/8/dists/stable/ stable main"
+        state: present
+        filename: elastic-8.x
+###
+
+
+
+- name: Prometheus Installing
+  hosts: prometheus_hosts
+  become: true
+  tasks:
+    - name: Create User Prometheus
+      user:
+        name: prometheus
+        create_home: no
+        shell: /bin/false
+    - name: Create Directories For Prometheus
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: prometheus
+        group: prometheus
+      loop:
+        - '/tmp/prometheus'
+        - '/etc/prometheus'
+        - '/var/lib/prometheus'
+    - name: Download And Unzipped Prometheus
+      unarchive:
+        src: https://github.com/prometheus/prometheus/releases/download/v2.45.0/prometheus-2.45.0.linux-amd64.tar.gz
+        dest: /tmp/prometheus
+        creates: /tmp/prometheus/prometheus-2.45.0.linux-amd64
+        remote_src: yes
+    - name: Copy Bin Files From Unzipped to Prometheus
+      copy: 
+        src: /tmp/prometheus/prometheus-2.45.0.linux-amd64/{{ item }}
+        dest: /usr/local/bin/
+        remote_src: yes
+        mode: preserve
+        owner: prometheus
+        group: prometheus
+      loop: [ 'prometheus', 'promtool' ]
+    - name: Copy Conf Files From Unzipped to Prometheus
+      copy: 
+        src: /tmp/prometheus/prometheus-2.45.0.linux-amd64/{{ item }}
+        dest: /etc/prometheus/
+        remote_src: yes
+        mode: preserve
+        owner: prometheus
+        group: prometheus
+      loop: [ 'console_libraries', 'consoles', 'prometheus.yml' ]
+    - name: Create File for Prometheus Systemd
+      template:
+        src: config/prometheus.service
+        dest: /etc/systemd/system/
+    
+    - name: config prometheus
+      template:
+        src: config/prometheus/prometheus.j2
+        dest: /etc/prometheus/prometheus.yml
+    - name: Systemctl Prometheus Start
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+    
+- name: Install Node-exporter
+  hosts: node_exporter_hosts
+  become: true
+  tasks:
+    - name: Create User Prometheus
+      user:
+        name: prometheus
+        create_home: no
+        shell: /bin/false
+    - name: Create Directories For Node-exporter
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: prometheus
+        group: prometheus
+      loop:
+        - '/tmp/node-exporter'
+        - '/etc/prometheus/node-exporter'
+    - name: Download And Unzipped Node-exporter
+      unarchive:
+        src: https://github.com/prometheus/node_exporter/releases/download/v1.0.0/node_exporter-1.0.0.linux-amd64.tar.gz
+        dest: /tmp/node-exporter
+        creates: /tmp/node-exporter/node_exporter-1.0.0.linux-amd64
+        remote_src: yes
+    - name: Copy Conf Files From Unzipped to Node-exporter
+      copy: 
+        src: /tmp/node-exporter/node_exporter-1.0.0.linux-amd64/{{ item }}
+        dest: /etc/prometheus/node-exporter
+        remote_src: yes
+        mode: preserve
+        owner: prometheus
+        group: prometheus
+      loop: [ 'node_exporter', 'NOTICE', 'LICENSE' ]
+    - name: Create File for Node-exporter Systemd
+      template:
+        src: config/node-exporter.service
+        dest: /etc/systemd/system/
+    - name: Systemctl Node-exporter Start
+      systemd:
+        name: node-exporter
+        state: started
+        enabled: yes
+    
+- name: WEB install Nginx Log Exporter
+  hosts: webservers
+  become: true
+  tasks:
+    - name: Install Nginx Log Exporter
+      ansible.builtin.apt:
+        deb: https://github.com/martin-helmich/prometheus-nginxlog-exporter/releases/download/v1.9.2/prometheus-nginxlog-exporter_1.9.2_linux_amd64.deb
+        state: present
+    - name: Edit service prometheus-nginxlog-exporter
+      template:
+        src: config/prometheus-nginxlog-exporter.hcl.j2
+        dest: /etc/prometheus-nginxlog-exporter.hcl
+    - name: chmod nginx access log to 755
+      file:
+        path: /var/log/nginx/access.log
+        mode: 0755
+    - name: chmod nginx error log to 755./
+      file:
+        path: /var/log/nginx/error.log
+        mode: 0755
+    - name: Start service Nginx Log Exporter
+      ansible.builtin.service:
+        name: prometheus-nginxlog-exporter.service
+        state: restarted
+
+- name: Grafana installing
+  hosts: grafana_hosts
+  become: true
+  tasks:
+    - name: Install Grafana
+      ansible.builtin.apt:
+        deb: https://dl.grafana.com/oss/release/grafana_10.0.2_amd64.deb
+        state: present
+    - name: Enable service Grafana
+      ansible.builtin.service:
+        name: grafana-server
+        enabled: true
+        state: started
+    - name: Check if Grafana is accessible
+      uri:
+        url: 'http://localhost:3000'
+        return_content: yes
+        validate_certs: no
+        status_code:
+          - 200
+      until: uri_output.status == 200
+      retries: 24 
+      delay: 5
+      register: uri_output
+    - name: drop prometheus datasource
+      community.grafana.grafana_datasource:
+        name: prometheus
+        state: absent
+        url: http://localhost:3000
+        url_username: "admin"
+        url_password: "admin"
+        ds_type: prometheus
+        ds_url: http://prometheus:9090
+        access: proxy
+    - name: create prometheus datasource
+      community.grafana.grafana_datasource:
+        name: prometheus
+        state: present
+        url: http://localhost:3000
+        url_username: "admin"
+        url_password: "admin"
+        ds_type: prometheus
+        ds_url: http://prometheus:9090
+        access: proxy
+    - name: Import Grafana dashboard
+      community.grafana.grafana_dashboard:
+        url: http://localhost:3000
+        url_username: "admin"
+        url_password: "admin"
+        folder: General
+        dashboard_id: 11074
